@@ -1,0 +1,20 @@
+#!/usr/bin/env stap
+
+probe begin {
+  printf("Start monitoring mount/remount/umount operations\n")
+}
+
+probe syscall.mount {
+	pt = pid2task(pid())
+	printf("%s\n", task_ancestry(pt, 1))
+	print_backtrace();
+	print("\n");
+}
+
+probe syscall.umount {
+	pt = pid2task(pid())
+	printf("%s\n", task_ancestry(pt, 1))
+	print_backtrace();
+	print("\n");
+}
+

@@ -1,0 +1,28 @@
+#!/usr/bin/env stap
+
+probe begin {
+	printf("probe began\n");
+}
+
+probe module("ipmi_si").function("smi_start_processing") {
+  printf("smi_start_processing(%s)\n", $send_info$$);
+  print_backtrace();
+}
+
+probe module("ipmi_si").function("wait_for_timer_and_thread") {
+  printf("wait_for_timer_and_thread(%s)\n", $smi_info$$);
+  print_backtrace();
+}
+
+probe module("ipmi_si").function("init_ipmi_si").call {
+  printf("init_ipmi_si() called\n");
+}
+
+probe module("ipmi_si").function("init_ipmi_si").return {
+  print_backtrace();
+  printf("init_ipmi_si() = %d\n", $return);
+}
+probe module("ipmi_si").function("cleanup_ipmi_si").call {
+  printf("cleanup_ipmi_si\n");
+  print_backtrace();
+}

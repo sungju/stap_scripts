@@ -1,0 +1,47 @@
+#!/usr/bin/env stap
+
+global target_name;
+
+probe begin {
+  target_name = strtol(@1, 10);
+  printf("Tracking %ld for all signals and exit()\n", target_name);
+}
+
+probe syscall.exit* {
+  if(pid() == target_name) {
+    printf("%s is called %s\n", execname(), probefunc());
+
+    pt = pid2task(pid())
+    printf("%s\n", task_ancestry(pt, 1))
+  }
+}
+
+probe kernel.function("do_exit") {
+  if(pid() == target_name) {
+    printf("%s(%ld) is called %s\n", execname(), pid(), probefunc());
+
+    pt = pid2task(pid())
+    printf("%s\n", task_ancestry(pt, 1))
+
+    print_backtrace();
+    print_ubacktrace();
+    println();
+  }
+}
+
+probe signal.send {
+  if (sig_pid == target_name) {
+    printf("%s was sent to %s(pid:%d) by %s(%d) uid:%d\n",
+        sig_name, pid_name, sig_pid, execname(), pid(), uid())
+
+    pt = pid2task(pid())
+    printf("sender details: %s\n", task_ancestry(pt, 1))
+    printf("         USER : %s\n", env_var("USER"))
+    printf("         HOME : %s\n", env_var("HOME"))
+    printf("         PWD  : %s\n", env_var("PWD"))
+
+    print_backtrace();
+    print_ubacktrace();
+    println();
+  }
+}

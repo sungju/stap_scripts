@@ -1,0 +1,36 @@
+#! /usr/bin/env stap
+
+global watching_inode
+
+probe vfs.open
+{
+  inode=$path->dentry->d_inode->i_ino
+  if (inode == watching_inode) {
+    pt = pid2task(pid())
+    printf ("\nDate: %s\n"
+            "Function: %s \n"
+            "Process Name: %s PID: [%d] accessed inode: %d \n"
+            "Pstree: %s\n\n",
+            ctime(gettimeofday_s()), ppfunc(), execname(), 
+            pid(), inode, task_ancestry(pt, 1))
+
+    printf("flags: 0x%x(%s), mode: 0%o\n", $filp->f_flags, 
+                                            file_flags($filp->f_flags), 
+                                            $filp->f_mode);
+  }
+
+}
+
+function file_flags:string(flags:long) {
+  if (flags & 0x1 == 0) return "O_RDONLY";
+  if (flags & 0x1 == 1) return "O_WRONLY";
+  if (flags & 0x1 == 2) return "O_WR";
+  return "";
+}
+
+probe begin
+{
+  watching_inode = $1
+  printf("probe started to monitor inode %d\n", watching_inode);
+}
+

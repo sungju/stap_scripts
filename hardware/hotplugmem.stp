@@ -1,0 +1,96 @@
+#! /usr/bin/env stap
+
+# Targeted to check memory hot-adding in rhel6.x on Hyper-V
+# But can be a good example to write other codes.
+# Contains user defined functions, function trace, module trace,
+# statement trace, etc.
+
+%{
+#include <linux/mm.h>
+#include <linux/mmzone.h>
+#include <linux/bootmem.h>
+#include <linux/bit_spinlock.h>
+#include <linux/page_cgroup.h>
+#include <linux/hash.h>
+#include <linux/slab.h>
+#include <linux/memory.h>
+#include <linux/vmalloc.h>
+#include <linux/cgroup.h>
+#include <linux/swapops.h>
+%}
+
+probe begin {
+    print("hotplug memory probe running\n")
+}
+
+function check_page_cgroup_callback:string (arg:long) %{
+	struct memory_notify *mn = (struct memory_notify *)STAP_ARG_arg;
+	snprintf(STAP_RETVALUE, MAXSTRINGLEN, "%lx, %lx, %x", mn->start_pfn, mn->nr_pages, mn->status_change_nid);
+%}
+
+function action_str:string (action:long) %{
+	char str[20];
+	switch (STAP_ARG_action) {
+	case MEM_GOING_ONLINE:
+		sprintf(str, "GOING_ONLINE");
+		break; 
+	case MEM_OFFLINE:
+		sprintf(str, "OFFLINE");
+		break;
+	case MEM_CANCEL_ONLINE:
+		sprintf(str, "CANCEL_ONLINE");
+		break;
+	case MEM_GOING_OFFLINE:
+		sprintf(str, "GOING_OFFLINE");
+		break;
+	case MEM_ONLINE:
+		sprintf(str, "ONLINE");
+		break;
+	case MEM_CANCEL_OFFLINE:
+		sprintf(str, "CANCEL_OFFLINE");
+		break;
+	default:
+		sprintf(str, "INVALID");
+		break;
+	}
+	snprintf(STAP_RETVALUE, MAXSTRINGLEN, "%s", str);
+%}
+
+probe kernel.function("page_cgroup_callback").call {
+	printf("page_cgroup_callback() called with action %s\n", action_str($action));
+	printf("arg = %s\n", check_page_cgroup_callback($arg));
+}
+
+probe kernel.function("__free_page_cgroup").call {
+	printf("__free_page_cgroup() called with pfn = %ld\n", $pfn);
+}
+
+probe kernel.function("init_section_page_cgroup").return {
+	printf("init_section_page_cgroup(pfn=%ld, nid=%d) returns with error = %d\n",
+		$pfn, $nid, $return);
+}
+
+probe kernel.function("sparse_add_one_section").call {
+	printf("sparse_add_one_section(zone=%p, start_pfn=%ld, nr_pages=%d\n",
+		$zone, $start_pfn, $nr_pages);
+}
+
+probe module("hv_balloon").function("*") {
+	printf("%s() called\n", probefunc());
+}
+
+probe kernel.function("*@mm/sparse.c") {
+	printf("%s() called\n", probefunc());
+}
+
+probe kernel.function("*@mm/memory_hotplug.c") {
+	printf("%s() called\n", probefunc());
+}
+
+probe module("hv_balloon").statement("*@drivers/hv/hv_balloon.c:1066") {
+        printf("balloon_up() called\n");
+}
+
+probe module("hv_balloon").statement("*@drivers/hv/hv_balloon.c:1143") {
+        printf("balloon_down() called\n");
+}

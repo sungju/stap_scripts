@@ -1,0 +1,14 @@
+#!/usr/bin/env stap
+
+probe kernel.function("__remove_hrtimer").call {
+        if ($timer->function == 0) {
+                printf("__remove_hrtimer() is called : %p with function %p\n", $timer, $timer->function);
+                print_backtrace();
+        }
+}
+probe kernel.function("enqueue_hrtimer").call {
+        if ($timer->function == 0) {
+                printf("enqueue_hrtimer() is called : %p with function %p\n", $timer, $timer->function);
+                print_backtrace();
+        }
+}
