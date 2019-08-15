@@ -1,0 +1,107 @@
+#!/usr/bin/env stap
+
+global should_panic = 0;
+
+probe begin {
+        printf("probe began\n");
+	if ($# > 0) {
+		should_panic = 1;
+	}
+	printf("should_panic = %d\n", should_panic);
+}
+
+probe kernel.function("pty_set_termios") {
+        tname = kernel_string(@cast($tty, "struct tty_struct")->name);
+	printf("\tpty_set_termios() called. %s, %d for %s\n", execname(), pid(), tname);
+	old_flag = @cast($old_termios, "struct ktermios")->c_lflag;
+        new_flag = @cast($tty, "struct tty_struct")->termios->c_lflag;
+	printf("\t\told termios = %x %s\n", old_flag, (old_flag & 2 ? "ICANON" : ""));
+	printf("\t\tnew termios = %x %s\n", new_flag, (new_flag & 2 ? "ICANON" : ""));
+}
+
+probe kernel.function("n_tty_set_termios").call {
+        tname = kernel_string(@cast($tty, "struct tty_struct")->name);
+	printf("n_tty_set_termios() called. %s, %d for %s\n", execname(), pid(), tname);
+	print_backtrace();
+	mymutex = @cast($tty, "struct tty_struct")->termios_mutex->count->counter;
+	printf("\tmutex->count = %d\n", mymutex);
+}
+
+probe kernel.function("n_tty_set_termios").return {
+        tname = kernel_string(@cast(@entry($tty), "struct tty_struct")->name);
+	printf("n_tty_set_termios() completed. %s, %d for %s\n", execname(), pid(), tname);
+	tty_data = @cast(@entry($tty), "struct tty_struct")->disc_data;
+	icanon = @cast(tty_data, "struct n_tty_data")->icanon;
+        new_flag = @cast(@entry($tty), "struct tty_struct")->termios->c_lflag;
+	printf("\ticanon = %d, flag = %x %s\n", icanon, new_flag, (new_flag & 2 ? "ICANON" : ""));
+
+	my_icanon = (new_flag & 2) != 0;
+	if (icanon != my_icanon) {
+		printf("icanon (%d) does not match with c_lflag (%d)\n", icanon, my_icanon);
+		if (should_panic) 
+			panic("icanon does not match c_lfag");
+	}
+}
+
+probe kernel.function("tty_set_termios").call {
+	tname = kernel_string(@cast($tty, "struct tty_struct")->name);
+	printf("tty_set_termios() called. %s, %d for %s\n", execname(), pid(), tname);
+	tty_data = @cast($tty, "struct tty_struct")->disc_data;
+	icanon = @cast(tty_data, "struct n_tty_data")->icanon;
+        new_flag = @cast($tty, "struct tty_struct")->termios->c_lflag;
+	printf("\ticanon = %d, flag = %x %s\n", icanon, new_flag, (new_flag & 2 ? "ICANON" : ""));
+
+/*
+	mymutex = @cast($tty, "struct tty_struct")->termios_mutex->count->counter;
+	printf("\tmutex->count = %d\n", mymutex);
+*/
+}
+
+probe kernel.function("tty_set_termios").return {
+	tname = kernel_string(@cast(@entry($tty), "struct tty_struct")->name);
+	printf("tty_set_termios() completed. %s, %d for %s\n", execname(), pid(), tname);
+	tty_data = @cast(@entry($tty), "struct tty_struct")->disc_data;
+	icanon = @cast(tty_data, "struct n_tty_data")->icanon;
+        new_flag = @cast(@entry($tty), "struct tty_struct")->termios->c_lflag;
+	printf("\ticanon = %d, flag = %x %s\n", icanon, new_flag, (new_flag & 2 ? "ICANON" : ""));
+	ops = @cast(@entry($tty), "struct tty_struct")->ops
+	printf("\ttty->ops->start = %x\n", ops->start);
+	printf("-----------------------------------\n\n");
+}
+
+
+/*
+probe kernel.function("n_tty_receive_char").call {
+	tname = kernel_string(@cast($tty, "struct tty_struct")->name);
+	printf("n_tty_receive_char() called. %s, %d for %s\n", execname(), pid(), tname);
+}
+
+probe kernel.function("n_tty_receive_char").return {
+	tname = kernel_string(@cast(@entry($tty), "struct tty_struct")->name);
+	printf("n_tty_receive_char() completed. %s, %d for %s\n", execname(), pid(), tname);
+}
+*/
+
+probe kernel.function("tty_open").call {
+	printf("\ttty_open() called. %s, %d\n", execname(), pid());
+	print_backtrace();
+	printf("\n");
+}
+
+probe kernel.function("tty_open").return {
+	printf("\ttty_open() completed. %s, %d\n", execname(), pid());
+	printf("\n");
+}
+
+probe kernel.function("n_tty_open").call {
+        tname = kernel_string(@cast($tty, "struct tty_struct")->name);
+	printf("\tn_tty_open() called. %s, %d for %s\n", execname(), pid(), tname);
+	print_backtrace();
+	printf("\n");
+}
+
+probe kernel.function("n_tty_open").return {
+        tname = kernel_string(@cast(@entry($tty), "struct tty_struct")->name);
+	printf("\tn_tty_open() completed. %s, %d for %s\n", execname(), pid(), tname);
+	printf("\n");
+}
