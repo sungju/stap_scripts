@@ -1,0 +1,71 @@
+# This script displays the number of given slab allocations and the backtraces leading up to it.
+# The original source was from the below KCS, however I had to change it to
+# monitor for a specified counts instead of 10 seconds.
+# 
+#     Is there a way to track slab allocations or leaks with systemtap?
+#     https://access.redhat.com/articles/2850581
+#
+# It runs for a specified times
+# Usage:
+# stap -v --all-modules kmem_alloc_free.stp dentry -o stap_result.txt 2
+
+global slab = @1
+global total_alloc_count = 0
+global total_free_count = 0
+global max_alloc_limit = $2
+global stats, stacks
+
+probe begin {
+	printf("Start to monitor \"%s\" alloc calls for %d times\n",
+		slab, max_alloc_limit)
+        printf("-------------------------------------------------------\n\n")
+}
+
+probe kernel.function("kmem_cache_alloc") {
+	name = kernel_string(@defined($cachep) ? $cachep->name : $s->name)
+	check_alloc_or_free(name, 1)
+}
+
+probe kernel.function("__kmalloc") {
+	name = sprintf("size-%d", $size)
+	check_alloc_or_free(name, 1)
+	name = sprintf("kmalloc-%d", $size)
+	check_alloc_or_free(name, 1)
+}
+
+probe kernel.function("__slab_free") {
+	name = kernel_string(@defined($cachep) ? $cachep->name : $s->name)
+	check_alloc_or_free(name, 2)
+}
+
+function check_alloc_or_free(name:string, alloc_mode:long) {
+        if (name == slab) {
+                stats[execname()] <<< 1
+                stacks[execname(),name,backtrace()] <<< 1
+		if (alloc_mode == 1) {
+			total_alloc_count = total_alloc_count + 1
+			if (total_alloc_count >= max_alloc_limit) {
+				exit()
+			}
+		} else if (alloc_mode == 2) {
+			total_free_count = total_free_count + 1
+		}
+        }
+}
+
+probe end {
+	printf("Total %d times of %s slab allocations by process\n",
+		total_alloc_count, slab)
+        printf("Number of %s slab allocations by process\n", slab)
+        foreach ([exec] in stats) {
+                printf("%s:\t%d\n",exec,@count(stats[exec]))
+        }
+	printf("\n%d times freed during the period\n", total_free_count)
+        printf("\nBacktrace of processes when allocating\n")
+        foreach ([proc,cache,bt] in stacks) {
+                printf("Exec: %s Name: %s  Count: %d\n",proc,cache,@count(stacks[proc,cache,bt]))
+                print_stack(bt)
+                printf("\n-------------------------------------------------------\n\n")
+        }
+}
+

@@ -1,0 +1,58 @@
+# This script displays the number of given slab allocations and the backtraces leading up to it.
+# The original source was from the below KCS, however I had to change it to
+# monitor for a specified counts instead of 10 seconds.
+# 
+#     Is there a way to track slab allocations or leaks with systemtap?
+#     https://access.redhat.com/articles/2850581
+#
+# It runs for a specified times
+# Usage:
+# stap -v --all-modules kmem_alloc.stp dentry -o stap_result.txt 2
+
+global slab = @1
+global total_alloc_count = 0
+global max_alloc_limit = $2
+global stats, stacks
+
+probe begin {
+	printf("Start to monitor \"%s\" calls for %d times\n",
+		slab, max_alloc_limit)
+        printf("-------------------------------------------------------\n\n")
+}
+
+probe kernel.function("kmem_cache_alloc") {
+	name = kernel_string(@defined($cachep) ? $cachep->name : $s->name)
+	check_alloc(name)
+}
+
+probe kernel.function("__kmalloc") {
+	name = sprintf("size-%d", $size)
+	check_alloc(name)
+	name = sprintf("kmalloc-%d", $size)
+	check_alloc(name)
+}
+
+function check_alloc(name:string) {
+        if (name == slab) {
+                stats[execname()] <<< 1
+                stacks[execname(),name,backtrace()] <<< 1
+		total_alloc_count = total_alloc_count + 1
+		if (total_alloc_count >= max_alloc_limit) {
+			exit()
+		}
+        }
+}
+
+probe end {
+        printf("Number of %s slab allocations by process\n", slab)
+        foreach ([exec] in stats) {
+                printf("%s:\t%d\n",exec,@count(stats[exec]))
+        }
+        printf("\nBacktrace of processes when allocating\n")
+        foreach ([proc,cache,bt] in stacks) {
+                printf("Exec: %s Name: %s  Count: %d\n",proc,cache,@count(stacks[proc,cache,bt]))
+                print_stack(bt)
+                printf("\n-------------------------------------------------------\n\n")
+        }
+}
+
