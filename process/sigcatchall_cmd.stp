@@ -3,13 +3,14 @@
 global target_name;
 
 probe begin {
-  target_name = strtol(@1, 10);
-  printf("Tracking %ld for all signals and exit()\n", target_name);
+  target_name = @1
+  printf("Tracking %s for all signals and exit()\n", target_name);
 }
 
 probe syscall.exit* {
-  if(pid() == target_name) {
-    printf("%s is called %s at %s\n", execname(), probefunc(), ctime(gettimeofday_s()));
+  if(execname() == target_name) {
+    printf("%s is called %s at %s\n", execname(), probefunc(),
+	ctime(gettimeofday_s()));
 
     pt = pid2task(pid())
     printf("%s\n", task_ancestry(pt, 1))
@@ -17,8 +18,9 @@ probe syscall.exit* {
 }
 
 probe kernel.function("do_exit") {
-  if(pid() == target_name) {
-    printf("%s(%ld) is called %s at %s\n", execname(), pid(), probefunc(), ctime(gettimeofday_s()));
+  if(execname() == target_name) {
+    printf("%s(%ld) is called %s at %s\n", execname(), pid(), probefunc(),
+					ctime(gettimeofday_s()));
 
     pt = pid2task(pid())
     printf("%s\n", task_ancestry(pt, 1))
@@ -30,7 +32,7 @@ probe kernel.function("do_exit") {
 }
 
 probe signal.send {
-  if (sig_pid == target_name) {
+  if (pid_name == target_name) {
     printf("%s was sent to %s(pid:%d) by %s(%d) uid:%d at %s\n",
         sig_name, pid_name, sig_pid, execname(), pid(), uid(),
 	ctime(gettimeofday_s()))
