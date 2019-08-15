@@ -1,0 +1,26 @@
+#!/usr/bin/env stap
+
+global count = 0;
+
+probe begin {
+	printf("probe began\n");
+}
+
+probe syscall.execve {
+	if (execname() == "sshd" && filename == "\"/bin/bash\"") {
+		count++;
+		if (count % 2 == 0) {
+			printf("%-25s: %s (%d) is exec'ing %s\n",
+				ctime(gettimeofday_s()), execname(),
+				pid(), filename);
+		}
+	}
+}
+
+function mydelay:long(time:long) %{
+	while (STAP_ARG_time > 0) {
+		STAP_ARG_time = STAP_ARG_time - 1;
+		msleep(10000);
+	}
+	STAP_RETVALUE = 0;
+%}
